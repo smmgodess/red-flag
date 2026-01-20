@@ -166,7 +166,7 @@ export default function SwipeDeck({ personas, onLike, onPass, onDeckEmpty, isPre
       </div>
 
       {/* Card Container */}
-      <div className="flex-1 flex items-center justify-center px-4 py-6">
+      <div className="relative flex-1 flex items-center justify-center overflow-hidden">
         <div className="relative w-full max-w-sm h-[70vh] mx-auto"> 
           {/* Background cards */}
           {personas.slice(currentIndex + 1, currentIndex + 3).map((persona, index) => (
@@ -222,24 +222,28 @@ export default function SwipeDeck({ personas, onLike, onPass, onDeckEmpty, isPre
         </div>
       </div>
 
-      {/* Floating Action Buttons - TINDER STYLE */}
-      <div className="absolute bottom-16 left-0 right-0 flex justify-center gap-8 z-[100] pointer-events-none w-full px-4 max-w-[375px] mx-auto">
-        <button
-          onClick={() => handleSwipe('pass')}
-          className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg pointer-events-auto cursor-pointer hover:scale-110 active:scale-95 transition-transform border-2 border-red-500/20"
-        >
-          <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-        <button
-          onClick={() => handleSwipe('like')}
-          className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg pointer-events-auto cursor-pointer hover:scale-110 active:scale-95 transition-transform border-2 border-purple-500/20"
-        >
-          <svg className="w-8 h-8 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-          </svg>
-        </button>
+      {/* Action Buttons - Flexbox based */}
+      <div className="w-full px-6 pb-6 pt-4">
+        <div className="flex justify-center gap-8">
+          <button
+            onClick={() => handleSwipe('pass')}
+            className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl active:shadow-md transition-all border-2 border-red-500/20 hover:border-red-500/40"
+            aria-label="Pass"
+          >
+            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <button
+            onClick={() => handleSwipe('like')}
+            className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl active:shadow-md transition-all border-2 border-purple-500/20 hover:border-purple-500/40"
+            aria-label="Like"
+          >
+            <svg className="w-8 h-8 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Keyboard Instructions */}

@@ -345,22 +345,30 @@ function App() {
       handleSelectChat(matchId);
    };
 
-  return (
-    // 1. OUTER BACKGROUND (The "Desk")
-    <div className="min-h-screen bg-gray-900 flex justify-center items-center p-4 font-sans">
-      
-      {/* 2. THE PHONE CHASSIS (iPhone 14 Pro Dimensions) */}
-      <div className="relative w-[375px] h-[812px] bg-black rounded-[50px] shadow-2xl border-[8px] border-gray-800 overflow-hidden ring-4 ring-black">
-        
-        {/* 3. THE NOTCH (Dynamic Island) */}
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-[120px] h-[35px] bg-black rounded-b-[20px] z-[50]"></div>
+  // Import the PhoneFrame component at the top of the file
+  const PhoneFrame = ({ children }) => (
+    <div className="relative w-full h-full bg-white overflow-hidden">
+      {children}
+    </div>
+  );
 
-        {/* 4. THE SCREEN CONTENT */}
-        <div className="w-full h-full bg-slate-50 relative overflow-y-auto no-scrollbar phone-screen">
-          
-          {/* Toast Notification Layer */}
-          <div className="absolute top-12 left-0 right-0 z-[60] px-4 pointer-events-none">
-             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="relative w-full max-w-[414px] h-[90vh] max-h-[896px] bg-black rounded-[40px] shadow-2xl overflow-hidden border-[14px] border-black">
+        {/* Status bar */}
+        <div className="h-12 bg-black flex items-center justify-between px-6 pt-2 text-white text-xs z-50">
+          <span>9:41</span>
+          <div className="flex items-center space-x-2">
+            <span>📶</span>
+            <span>🔋</span>
+          </div>
+        </div>
+        
+        {/* Screen content */}
+        <div className="h-[calc(100%-48px)] bg-white relative overflow-hidden">
+          {/* Toast Notification */}
+          <div className="absolute top-2 left-0 right-0 z-50 px-4 pointer-events-none">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
           </div>
 
           {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
@@ -373,16 +381,18 @@ function App() {
           />
 
           {!showOnboarding && view === 'swipe' && (
-            <div className="pt-12 pb-20 h-full"> {/* Added Padding for Notch & Nav */}
-              <SwipeDeck
-                personas={availableSkins}
-                onLike={handleLike}
-                onPass={handlePass}
-                onDeckEmpty={handleDeckEmpty}
-                isPremium={isPremium}
-                onRefresh={handleRefreshSearch}
-                currentMatches={matches}
-              />
+            <div className="h-full flex flex-col">
+              <div className="flex-1 overflow-hidden">
+                <SwipeDeck
+                  personas={availableSkins}
+                  onLike={handleLike}
+                  onPass={handlePass}
+                  onDeckEmpty={handleDeckEmpty}
+                  isPremium={isPremium}
+                  onRefresh={handleRefreshSearch}
+                  currentMatches={matches}
+                />
+              </div>
             </div>
           )}
 
@@ -412,8 +422,8 @@ function App() {
 
           {/* Navigation Bar (Fixed to bottom of phone) */}
           {!showOnboarding && view !== 'chat' && (
-            <div className="absolute bottom-0 w-full z-40">
-               <BottomNav currentView={view} onViewChange={handleViewChange} />
+            <div className="absolute bottom-0 left-0 right-0 z-40">
+              <BottomNav currentView={view} onViewChange={handleViewChange} />
             </div>
           )}
 
@@ -421,6 +431,11 @@ function App() {
           {revealPersona && <RevealModal persona={revealPersona} onClose={handleCloseReveal} onUpgrade={handleUnlockTruth} />}
           {showResurrection && fadingMatch && <ResurrectionModal match={fadingMatch} onClose={handleCloseResurrection} onResurrect={handleResurrectMatch} onLetGo={handleLetGo} />}
           {showUpgrade && <UpgradeModal onClose={handleCloseUpgrade} onUpgrade={handleUpgradeComplete} />}
+        </div>
+        
+        {/* Home indicator for iOS */}
+        <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+          <div className="w-1/3 h-1 bg-gray-400 rounded-full"></div>
         </div>
       </div>
     </div>
