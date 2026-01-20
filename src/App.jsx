@@ -9,7 +9,7 @@ import ResurrectionModal from './components/ResurrectionModal';
 import BottomNav from './components/BottomNav';
 import Toast from './components/Toast'; // <--- IMPORT THE NEW TOAST
 import MatchModal from './components/MatchModal'; // <--- IMPORT MATCH MODAL
-import { getDeepSeekReply } from './utils/aiLogic'; // Import new function
+import { getDeepSeekReply, summarizeForMemory } from './utils/aiLogic'; // Import new function
 import { userService } from './services/userService'; // Import user service for data logging
 import { useGameStore } from './store/gameStore'; // Import game store
 import rawData from './data/personas.json';
@@ -43,6 +43,7 @@ function App() {
     }
     return id;
   });
+  const [authUserId, setAuthUserId] = useState(null);
   const [revealPersona, setRevealPersona] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
@@ -92,6 +93,10 @@ function App() {
       const expiry = Date.now() + (24 * 60 * 60 * 1000);
       updatePremiumStatus(expiry);
     }
+
+    userService.ensureSignedIn().then(r => {
+      if (r && r.success && r.userId) setAuthUserId(r.userId)
+    })
   }, []);
 
   // --- NEW: ONBOARDING COMPLETE ---
@@ -203,58 +208,67 @@ function App() {
   };
 
   const handleSendMessage = async (personaId, message) => {
-    // 1. Add User Message immediately
-    const newMessage = { 
-        sender: 'user', 
-        text: message, 
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-    };
-    
-    // Log user message to Supabase
-    userService.logMessage(userId, personaId, message, 'user');
-    
-    // Update State (User Message)
-    setMatches(prev => prev.map(p => {
-       if (p.id === personaId) return { ...p, messages: [...p.messages, newMessage], last_interaction: Date.now() };
-       return p;
-    }));
-
-    // 2. Set Typing Indicator ON (The Anxiety)
     setTypingPersonaId(personaId);
+    try {
+      const newMessage = { 
+          sender: 'user', 
+          text: message, 
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      };
+      
+      userService.logMessage(userId, personaId, message, 'user');
+      
+      setMatches(prev => prev.map(p => {
+         if (p.id === personaId) return { ...p, messages: [...p.messages, newMessage], last_interaction: Date.now() };
+         return p;
+      }));
 
-    // 3. Get the Real Response from Xiaomi
-    const persona = matches.find(p => p.id === personaId);
-    
-    // We send the current message history + the new message
-    const currentMessages = [...persona.messages, newMessage];
+      const persona = matches.find(p => p.id === personaId);
+      if (!persona) throw new Error('PERSONA_NOT_FOUND');
+      
+      let currentMessages = [...persona.messages, newMessage];
 
-    // CALL THE API
-    // We don't await immediately because we want to enforce a minimum "reading time" delay
-    const apiPromise = getDeepSeekReply(OPENROUTER_API_KEY, currentMessages, persona);
-    
-    // Calculate a "Human" delay based on message length, or min 2 seconds
-    const minDelay = 2000;
-    const humanDelay = new Promise(resolve => setTimeout(resolve, minDelay));
+      const userMessageCount = currentMessages.filter(m => m.sender === 'user').length;
+      if (userMessageCount > 0 && userMessageCount % 10 === 0 && currentMessages.length >= 20) {
+        const chunk = currentMessages.slice(0, 10);
+        const summary = await summarizeForMemory(OPENROUTER_API_KEY, chunk);
+        if (summary) {
+          await userService.storeAiMemory(authUserId, personaId, summary, OPENROUTER_API_KEY);
+          currentMessages = currentMessages.slice(10);
+          setMatches(prev => prev.map(p => {
+            if (p.id === personaId) return { ...p, messages: currentMessages };
+            return p;
+          }));
+        }
+      }
 
-    // Wait for BOTH the API and Timer (so it doesn't reply instantly if API is fast)
-    const [aiText] = await Promise.all([apiPromise, humanDelay]);
+      const memoryResult = await userService.getRelevantMemories(authUserId, personaId, message, 3, OPENROUTER_API_KEY);
+      const longTermMemories = memoryResult?.data || [];
 
-    // 4. Add AI Reply
-    const reply = { 
-        sender: persona.name.toLowerCase(),
-        text: aiText, 
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-    };
-    
-    // Log AI message to Supabase
-    userService.logMessage(userId, personaId, aiText, 'ai');
-    
-    setMatches(prev => prev.map(p => {
-        if (p.id === personaId) return { ...p, messages: [...p.messages, reply] };
-        return p;
-    }));
-    
-    setTypingPersonaId(null); // STOP TYPING
+      const apiPromise = getDeepSeekReply(OPENROUTER_API_KEY, currentMessages, persona, longTermMemories);
+      const minDelay = 2000;
+      const humanDelay = new Promise(resolve => setTimeout(resolve, minDelay));
+
+      const [aiText] = await Promise.all([apiPromise, humanDelay]);
+
+      const reply = { 
+          sender: persona.name.toLowerCase(),
+          text: aiText, 
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      };
+
+      userService.logMessage(userId, personaId, aiText, 'ai');
+      
+      setMatches(prev => prev.map(p => {
+          if (p.id === personaId) return { ...p, messages: [...p.messages, reply] };
+          return p;
+      }));
+    } catch (error) {
+      console.error('Send message flow error:', error);
+      showToast('AI failed to reply. Check API key / console logs.', 'error');
+    } finally {
+      setTypingPersonaId(null);
+    }
   };
 
    const handleUpgrade = () => setShowUpgrade(true);
