@@ -18,7 +18,7 @@ function App() {
   // --- PATCH START ---
   // Initialize activePersona. 
   // Change 'default' to whatever mode you want to start in (e.g., 'user', 'admin', 'matchmaker')
-  const [activePersona, setActivePersona] = useState(null); 
+  //const [activePersona, setActivePersona] = useState(null);
   // --- PATCH END ---
 
   // Initialize game store
@@ -198,78 +198,118 @@ function App() {
     }
     setMatches(prev => prev.map(m => m.id === id ? { ...m, last_interaction: Date.now() } : m));
     setActivePersonaId(id);
-    setActivePersona(match); // Set the active persona object
     setView('chat');
   };
 
+    const handleGameLoss = (personaId) => {
+        const { consumeEnergy, currentEnergy, isPremiumActive } = useGameStore.getState();
+
+        if (!isPremiumActive) {
+            const hasEnergy = consumeEnergy();
+
+            if (!hasEnergy || currentEnergy <= 0) {
+                // Out of energy - show recharge modal
+                showToast("⚡ Out of Energy! Wait or upgrade to Premium.", "error");
+                setView('list');
+                return;
+            }
+
+            showToast(`💔 Game Over! -1 Energy (${currentEnergy - 1} left)`, "error");
+        }
+
+        // Remove the match
+        setMatches(prev => prev.filter(m => m.id !== personaId));
+        setView('list');
+    };
+
   const handleBack = () => {
     setView('list');
-    setActivePersona(null); // Clear active persona when going back
+    //setActivePersona(null); // Clear active persona when going back
   };
 
-  const handleSendMessage = async (personaId, message) => {
-    setTypingPersonaId(personaId);
-    try {
-      const newMessage = { 
-          sender: 'user', 
-          text: message, 
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-      };
-      
-      userService.logMessage(userId, personaId, message, 'user');
-      
-      setMatches(prev => prev.map(p => {
-         if (p.id === personaId) return { ...p, messages: [...p.messages, newMessage], last_interaction: Date.now() };
-         return p;
-      }));
+    const handleSendMessage = async (personaId, message) => {
+        setTypingPersonaId(personaId);
+        try {
+            const newMessage = {
+                sender: 'user',
+                text: message,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
 
-      const persona = matches.find(p => p.id === personaId);
-      if (!persona) throw new Error('PERSONA_NOT_FOUND');
-      
-      let currentMessages = [...persona.messages, newMessage];
+            // Log message to Supabase (non-blocking - don't await)
+            userService.logMessage(userId, personaId, message, 'user').catch(err => {
+                console.warn('⚠️ Failed to log user message to DB:', err);
+            });
 
-      const userMessageCount = currentMessages.filter(m => m.sender === 'user').length;
-      if (userMessageCount > 0 && userMessageCount % 10 === 0 && currentMessages.length >= 20) {
-        const chunk = currentMessages.slice(0, 10);
-        const summary = await summarizeForMemory(OPENROUTER_API_KEY, chunk);
-        if (summary) {
-          await userService.storeAiMemory(authUserId, personaId, summary, OPENROUTER_API_KEY);
-          currentMessages = currentMessages.slice(10);
-          setMatches(prev => prev.map(p => {
-            if (p.id === personaId) return { ...p, messages: currentMessages };
-            return p;
-          }));
+            setMatches(prev => prev.map(p => {
+                if (p.id === personaId) return { ...p, messages: [...p.messages, newMessage], last_interaction: Date.now() };
+                return p;
+            }));
+
+            const persona = matches.find(p => p.id === personaId);
+            if (!persona) throw new Error('PERSONA_NOT_FOUND');
+
+            let currentMessages = [...persona.messages, newMessage];
+
+            // Memory summarization logic (every 10 messages)
+            const userMessageCount = currentMessages.filter(m => m.sender === 'user').length;
+            if (userMessageCount > 0 && userMessageCount % 10 === 0 && currentMessages.length >= 20) {
+                try {
+                    const chunk = currentMessages.slice(0, 10);
+                    const summary = await summarizeForMemory(OPENROUTER_API_KEY, chunk);
+                    if (summary) {
+                        await userService.storeAiMemory(authUserId, personaId, summary, OPENROUTER_API_KEY);
+                        currentMessages = currentMessages.slice(10);
+                        setMatches(prev => prev.map(p => {
+                            if (p.id === personaId) return { ...p, messages: currentMessages };
+                            return p;
+                        }));
+                    }
+                } catch (memErr) {
+                    console.warn('⚠️ Memory summarization failed:', memErr);
+                    // Continue anyway - don't block chat
+                }
+            }
+
+            // Fetch relevant memories (non-blocking)
+            let longTermMemories = [];
+            try {
+                const memoryResult = await userService.getRelevantMemories(authUserId, personaId, message, 3, OPENROUTER_API_KEY);
+                longTermMemories = memoryResult?.data || [];
+            } catch (memErr) {
+                console.warn('⚠️ Failed to fetch memories:', memErr);
+                // Continue without memories
+            }
+
+            // Generate AI reply with minimum delay for realism
+            const apiPromise = getDeepSeekReply(OPENROUTER_API_KEY, currentMessages, persona, longTermMemories);
+            const minDelay = 2000;
+            const humanDelay = new Promise(resolve => setTimeout(resolve, minDelay));
+
+            const [aiText] = await Promise.all([apiPromise, humanDelay]);
+
+            const reply = {
+                sender: persona.name.toLowerCase(),
+                text: aiText,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+
+            // Log AI message to Supabase (non-blocking)
+            userService.logMessage(userId, personaId, aiText, 'ai').catch(err => {
+                console.warn('⚠️ Failed to log AI message to DB:', err);
+            });
+
+            setMatches(prev => prev.map(p => {
+                if (p.id === personaId) return { ...p, messages: [...p.messages, reply] };
+                return p;
+            }));
+        } catch (error) {
+            console.error('❌ Send message flow error:', error);
+            showToast('AI failed to reply. Check API key / console logs.', 'error');
+        } finally {
+            setTypingPersonaId(null);
         }
-      }
-
-      const memoryResult = await userService.getRelevantMemories(authUserId, personaId, message, 3, OPENROUTER_API_KEY);
-      const longTermMemories = memoryResult?.data || [];
-
-      const apiPromise = getDeepSeekReply(OPENROUTER_API_KEY, currentMessages, persona, longTermMemories);
-      const minDelay = 2000;
-      const humanDelay = new Promise(resolve => setTimeout(resolve, minDelay));
-
-      const [aiText] = await Promise.all([apiPromise, humanDelay]);
-
-      const reply = { 
-          sender: persona.name.toLowerCase(),
-          text: aiText, 
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-      };
-
-      userService.logMessage(userId, personaId, aiText, 'ai');
-      
-      setMatches(prev => prev.map(p => {
-          if (p.id === personaId) return { ...p, messages: [...p.messages, reply] };
-          return p;
-      }));
-    } catch (error) {
-      console.error('Send message flow error:', error);
-      showToast('AI failed to reply. Check API key / console logs.', 'error');
-    } finally {
-      setTypingPersonaId(null);
-    }
-  };
+    };
 
    const handleUpgrade = () => setShowUpgrade(true);
    const handleUpgradeComplete = () => { 
@@ -407,18 +447,18 @@ function App() {
              </div>
           )}
 
-          {!showOnboarding && view === 'chat' && activePersona && (
-            <div className="pt-10 h-full bg-white">
-              <ChatInterface 
-                persona={activePersona} 
-                onBack={handleBack}
-                messages={activePersona.messages}
-                onSendMessage={(message) => handleSendMessage(activePersona.id, message)}
-                onRevealRedFlag={() => handleRevealRedFlag(activePersona)}
-                isTyping={typingPersonaId === activePersona.id}
-              />
-            </div>
-          )}
+            {!showOnboarding && view === 'chat' && activePersonaId && (
+                <div className="pt-10 h-full bg-white">
+                    <ChatInterface
+                        persona={matches.find(m => m.id === activePersonaId)}
+                        onBack={handleBack}
+                        messages={matches.find(m => m.id === activePersonaId)?.messages || []}
+                        onSendMessage={(message) => handleSendMessage(activePersonaId, message)}
+                        onRevealRedFlag={() => handleRevealRedFlag(matches.find(m => m.id === activePersonaId))}
+                        isTyping={typingPersonaId === activePersonaId}
+                    />
+                </div>
+            )}
 
           {/* Navigation Bar (Fixed to bottom of phone) */}
           {!showOnboarding && view !== 'chat' && (

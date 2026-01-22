@@ -1,30 +1,28 @@
 import { supabase } from '../utils/supabase'
 
 const openRouterEmbed = async (apiKey, text) => {
-  const model = process.env.REACT_APP_OPENROUTER_EMBEDDING_MODEL
-  if (!model) return null
-
-  const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.href,
-      'X-Title': 'The Liar Dating Sim'
-    },
-    body: JSON.stringify({
-      model,
-      input: text
+  if (!apiKey) return null
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'openai/text-embedding-3-small',
+        input: text
+      })
     })
-  })
-
-  const data = await response.json().catch(() => ({}))
-  const embedding = data?.data?.[0]?.embedding
-  if (!embedding || !Array.isArray(embedding)) return null
-  return embedding
+    if (!response.ok) return null
+    const data = await response.json()
+    return data?.data?.[0]?.embedding || null
+  } catch (error) {
+    console.error('Embedding error:', error)
+    return null
+  }
 }
 
-// User profile operations
 export const userService = {
   async ensureSignedIn() {
     try {
@@ -39,22 +37,25 @@ export const userService = {
       return { success: false, error, userId: null }
     }
   },
+
   // Create or update user profile
   async upsertUserProfile(userData) {
     try {
+      const auth = await this.ensureSignedIn()
+      if (!auth.success || !auth.userId) throw new Error('NO_AUTH')
+
       const { data, error } = await supabase
-        .from('user_profiles')
-        .upsert({
-          id: userData.id,
-          name: userData.name,
-          gender: userData.gender,
-          interested_in: userData.interestedIn,
-          avatar: userData.avatar,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .select()
-      
+          .from('user_profiles')
+          .upsert({
+            id: auth.userId, // Use Supabase auth ID instead of local userId
+            name: userData.name,
+            gender: userData.gender,
+            interested_in: userData.interestedIn,
+            avatar: userData.avatar,
+            updated_at: new Date().toISOString()
+          })
+          .select()
+
       if (error) throw error
       return { success: true, data }
     } catch (error) {
@@ -66,16 +67,19 @@ export const userService = {
   // Log user swipe action
   async logSwipe(userId, personaId, action) {
     try {
+      const auth = await this.ensureSignedIn()
+      if (!auth.success || !auth.userId) return { success: false }
+
       const { data, error } = await supabase
-        .from('user_swipes')
-        .insert({
-          user_id: userId,
-          persona_id: personaId,
-          action: action, // 'like' or 'pass'
-          timestamp: new Date().toISOString()
-        })
-        .select()
-      
+          .from('user_swipes')
+          .insert({
+            user_id: auth.userId, // Use Supabase auth ID
+            persona_id: personaId,
+            action: action,
+            timestamp: new Date().toISOString()
+          })
+          .select()
+
       if (error) throw error
       return { success: true, data }
     } catch (error) {
@@ -87,16 +91,19 @@ export const userService = {
   // Log user match
   async logMatch(userId, personaId) {
     try {
+      const auth = await this.ensureSignedIn()
+      if (!auth.success || !auth.userId) return { success: false }
+
       const { data, error } = await supabase
-        .from('user_matches')
-        .insert({
-          user_id: userId,
-          persona_id: personaId,
-          matched_at: new Date().toISOString(),
-          is_premium: false
-        })
-        .select()
-      
+          .from('user_matches')
+          .insert({
+            user_id: auth.userId, // Use Supabase auth ID
+            persona_id: personaId,
+            matched_at: new Date().toISOString(),
+            is_premium: false
+          })
+          .select()
+
       if (error) throw error
       return { success: true, data }
     } catch (error) {
@@ -107,19 +114,34 @@ export const userService = {
 
   // Log chat message
   async logMessage(userId, personaId, message, sender) {
+    console.log('🔍 logMessage called:', { userId, personaId, message, sender });
     try {
+      const auth = await this.ensureSignedIn()
+      console.log('🔍 Auth result:', auth);
+      if (!auth.success || !auth.userId) {
+        console.log('❌ Auth failed, returning early');
+        return { success: false }
+      }
+
+      const payload = {
+        user_id: auth.userId,
+        persona_id: personaId,
+        message: message,
+        sender: sender,
+        timestamp: new Date().toISOString()
+      };
+      console.log('🔍 Inserting payload:', payload);
+
       const { data, error } = await supabase
-        .from('chat_messages')
-        .insert({
-          user_id: userId,
-          persona_id: personaId,
-          message: message,
-          sender: sender, // 'user' or 'ai'
-          timestamp: new Date().toISOString()
-        })
-        .select()
-      
-      if (error) throw error
+          .from('chat_messages')
+          .insert(payload)
+          .select()
+
+      if (error) {
+        console.log('❌ Supabase error:', error);
+        throw error;
+      }
+      console.log('✅ Message logged successfully:', data);
       return { success: true, data }
     } catch (error) {
       console.error('Error logging message:', error)
@@ -130,15 +152,18 @@ export const userService = {
   // Get user statistics
   async getUserStats(userId) {
     try {
+      const auth = await this.ensureSignedIn()
+      if (!auth.success || !auth.userId) return { success: false }
+
       const { data: swipes, error: swipeError } = await supabase
-        .from('user_swipes')
-        .select('action')
-        .eq('user_id', userId)
-      
+          .from('user_swipes')
+          .select('action')
+          .eq('user_id', auth.userId)
+
       const { data: matches, error: matchError } = await supabase
-        .from('user_matches')
-        .select('*')
-        .eq('user_id', userId)
+          .from('user_matches')
+          .select('*')
+          .eq('user_id', auth.userId)
 
       if (swipeError || matchError) throw swipeError || matchError
 
@@ -163,15 +188,15 @@ export const userService = {
 
       const embedding = apiKey ? await openRouterEmbed(apiKey, summary) : null
       const { data, error } = await supabase
-        .from('ai_memories')
-        .insert({
-          user_id: auth.userId,
-          content: summary,
-          embedding,
-          metadata: { persona_id: personaId },
-          created_at: new Date().toISOString()
-        })
-        .select()
+          .from('ai_memories')
+          .insert({
+            user_id: auth.userId,
+            content: summary,
+            embedding,
+            metadata: { persona_id: personaId },
+            created_at: new Date().toISOString()
+          })
+          .select()
 
       if (error) throw error
       return { success: true, data }
@@ -187,11 +212,11 @@ export const userService = {
       if (!auth.success || !auth.userId) return { success: false, data: [] }
 
       const { data, error } = await supabase
-        .from('ai_memories')
-        .select('content, created_at')
-        .eq('user_id', auth.userId)
-        .order('created_at', { ascending: false })
-        .limit(limit)
+          .from('ai_memories')
+          .select('content, created_at')
+          .eq('user_id', auth.userId)
+          .order('created_at', { ascending: false })
+          .limit(limit)
 
       if (error) throw error
       return { success: true, data: (data || []).map(r => r.content) }
@@ -210,11 +235,11 @@ export const userService = {
       if (!queryEmbedding) return await this.getRecentMemories(userId, personaId, limit)
 
       const { data, error } = await supabase
-        .rpc('match_ai_memories', {
-          query_embedding: queryEmbedding,
-          match_threshold: 0.7,
-          match_count: limit
-        })
+          .rpc('match_ai_memories', {
+            query_embedding: queryEmbedding,
+            match_threshold: 0.7,
+            match_count: limit
+          })
 
       if (error) {
         return await this.getRecentMemories(userId, personaId, limit)
