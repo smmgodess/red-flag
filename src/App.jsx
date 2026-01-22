@@ -1,205 +1,386 @@
-import React, { useState, useEffect } from 'react';
-import Onboarding from './components/Onboarding'; // New Onboarding
-import SwipeDeck from './components/SwipeDeck';
+
 import ChatList from './components/ChatList';
+import ResurrectionModal from './components/ResurrectionModal';
+import rawData from './data/personas.json';
+import UpgradeModal from './components/UpgradeModal';
 import ChatInterface from './components/ChatInterface';
 import RevealModal from './components/RevealModal';
-import UpgradeModal from './components/UpgradeModal';
-import ResurrectionModal from './components/ResurrectionModal';
+import SwipeDeck from './components/SwipeDeck';
 import BottomNav from './components/BottomNav';
-import Toast from './components/Toast'; // <--- IMPORT THE NEW TOAST
-import MatchModal from './components/MatchModal'; // <--- IMPORT MATCH MODAL
-import { getDeepSeekReply, summarizeForMemory } from './utils/aiLogic'; // Import new function
-import { userService } from './services/userService'; // Import user service for data logging
-import { useGameStore } from './store/gameStore'; // Import game store
-import rawData from './data/personas.json';
+import Toast from './components/Toast';
+import Onboarding from './components/Onboarding';
+import MatchModal from './components/MatchModal';
+import { userService } from './services/userService';
+import { useGameStore } from './store/gameStore';
+import { getDeepSeekReply, summarizeForMemory } from './utils/aiLogic';
+import React, { useState, useEffect } from 'react';
 
 function App() {
-  // --- PATCH START ---
-  // Initialize activePersona. 
-  // Change 'default' to whatever mode you want to start in (e.g., 'user', 'admin', 'matchmaker')
-  //const [activePersona, setActivePersona] = useState(null);
-  // --- PATCH END ---
-
-  // Initialize game store
-  const { initialize, updatePremiumStatus, addCoins } = useGameStore();
-
-  // TODO: Move to .env for production
-  const OPENROUTER_API_KEY = process.env.REACT_APP_OPENROUTER_API_KEY;
-  
-  const [view, setView] = useState('intro');
-  const [activePersonaId, setActivePersonaId] = useState(null);
-  const [typingPersonaId, setTypingPersonaId] = useState(null); // Typing indicator state
-
-  // NEW ONBOARDING STATE
-  const [showOnboarding, setShowOnboarding] = useState(true);
-  const [userProfile, setUserProfile] = useState(null); // Stores Name, Gender, Avatar
-  const [userId, setUserId] = useState(() => {
-    // Generate or retrieve user ID from localStorage
-    let id = localStorage.getItem('userId');
-    if (!id) {
-      id = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('userId', id);
-    }
-    return id;
-  });
-  const [authUserId, setAuthUserId] = useState(null);
-  const [revealPersona, setRevealPersona] = useState(null);
-  const [showUpgrade, setShowUpgrade] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-  const [showResurrection, setShowResurrection] = useState(false);
-  const [fadingMatch, setFadingMatch] = useState(null);
-  
-  // NEW STATE FOR TOASTS
-  const [toast, setToast] = useState(null); // { message: string, type: string }
-  const [newMatch, setNewMatch] = useState(null); // Stores match for popup
-
-  // LOGIC STATE
-  const [currentScriptIndex, setCurrentScriptIndex] = useState(0);
-  const [availableSkins, setAvailableSkins] = useState([]); // Start empty, fill after onboarding
-  const [matches, setMatches] = useState([]);
-  
-  // --- HELPER TO SHOW TOASTS ---
-  const showToast = (message, type = 'info') => {
-    setToast({ message, type });
-  };
-
-  // Check for ghosting (4-hour decay)
-  useEffect(() => {
-    const checkGhosting = () => {
-      const now = Date.now();
-      const fourHours = 4 * 60 * 60 * 1000;
-      setMatches(prev => prev.map(match => {
-        if (match.last_interaction && (now - match.last_interaction) > fourHours && !match.is_fading) {
-          return { ...match, is_fading: true };
-        }
-        return match;
-      }));
-    };
-    const interval = setInterval(checkGhosting, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // 2. CHECK LOCAL STORAGE
-  useEffect(() => {
     // Initialize game store
-    initialize();
-    
-    // We don't check 'hasSeenIntro' anymore because we want Onboarding to run if userProfile is missing
-    const premiumStatus = localStorage.getItem('isPremium');
-    if (premiumStatus === 'true') {
-      setIsPremium(true);
-      // Set premium expiry for demo (24 hours from now)
-      const expiry = Date.now() + (24 * 60 * 60 * 1000);
-      updatePremiumStatus(expiry);
-    }
+    const { initialize, updatePremiumStatus, addCoins } = useGameStore();
 
-    userService.ensureSignedIn().then(r => {
-      if (r && r.success && r.userId) setAuthUserId(r.userId)
-    })
-  }, []);
+    // TODO: Move to .env for production
+    const OPENROUTER_API_KEY = process.env.REACT_APP_OPENROUTER_API_KEY;
 
-  // --- NEW: ONBOARDING COMPLETE ---
-  const handleOnboardingComplete = (data) => {
-    console.log("Onboarding Complete:", data);
-    setUserProfile(data);
-    setShowOnboarding(false);
+    const [view, setView] = useState('intro');
+    const [activePersonaId, setActivePersonaId] = useState(null);
+    const [typingPersonaId, setTypingPersonaId] = useState(null);
 
-    // Save user profile to Supabase
-    userService.upsertUserProfile({
-      id: userId,
-      name: data.name,
-      gender: data.gender,
-      interestedIn: data.interestedIn,
-      avatar: data.avatar
+    // ONBOARDING STATE
+    const [showOnboarding, setShowOnboarding] = useState(true);
+    const [userProfile, setUserProfile] = useState(null);
+    const [userId, setUserId] = useState(() => {
+        let id = localStorage.getItem('userId');
+        if (!id) {
+            id = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('userId', id);
+        }
+        return id;
     });
+    const [authUserId, setAuthUserId] = useState(null);
+    const [revealPersona, setRevealPersona] = useState(null);
+    const [showUpgrade, setShowUpgrade] = useState(false);
+    const [isPremium, setIsPremium] = useState(false);
+    const [showResurrection, setShowResurrection] = useState(false);
+    const [fadingMatch, setFadingMatch] = useState(null);
 
-    // FILTER SKINS BASED ON GENDER PREFERENCE
-    let filteredSkins = rawData.skins;
+    // TOAST & MATCH STATE
+    const [toast, setToast] = useState(null);
+    const [newMatch, setNewMatch] = useState(null);
 
-    // If they didn't pick "everyone", filter by gender
-    if (data.interestedIn !== 'everyone') {
-      filteredSkins = rawData.skins.filter(s => s.gender === data.interestedIn);
-    }
+    // LOGIC STATE
+    const [currentScriptIndex, setCurrentScriptIndex] = useState(0);
+    const [availableSkins, setAvailableSkins] = useState([]);
+    const [matches, setMatches] = useState([]);
 
-    // Fallback if filter is too strict or empty (prevent empty deck)
-    if (filteredSkins.length === 0) {
-      showToast("⚠️ Expanding search criteria...", "info");
-      setAvailableSkins(rawData.skins);
-    } else {
-      setAvailableSkins(filteredSkins);
-    }
+    // NEW: Loading state for session restoration
+    const [isLoadingSession, setIsLoadingSession] = useState(true);
 
-    setView('swipe');
-  };
-
-  // --- THE SKIN-WALKER LOGIC ---
-  const handleLike = (skin) => {
-    if (!isPremium && matches.length >= 3) {
-      setShowUpgrade(true);
-      return;
-    }
-
-    // Log swipe action to Supabase
-    userService.logSwipe(userId, skin.id, 'like');
-
-    const scriptIndex = currentScriptIndex % rawData.scripts.length;
-    const scriptToInject = rawData.scripts[scriptIndex];
-
-    const newMatchObj = {
-      id: Date.now().toString(),
-      ...skin,
-      ...scriptToInject,
-      messages: scriptToInject.initial_messages,
-      last_interaction: Date.now(),
-      is_fading: false,
-      original_skin_name: skin.name
+    // HELPER TO SHOW TOASTS
+    const showToast = (message, type = 'info') => {
+        setToast({ message, type });
     };
 
-    setMatches(prev => [...prev, newMatchObj]);
-    setAvailableSkins(prev => prev.filter(s => s.id !== skin.id));
-    setCurrentScriptIndex(prev => prev + 1);
+    // Check for ghosting (4-hour decay)
+    useEffect(() => {
+        const checkGhosting = () => {
+            const now = Date.now();
+            const fourHours = 4 * 60 * 60 * 1000;
+            setMatches(prev => prev.map(match => {
+                if (match.last_interaction && (now - match.last_interaction) > fourHours && !match.is_fading) {
+                    return { ...match, is_fading: true };
+                }
+                return match;
+            }));
+        };
+        const interval = setInterval(checkGhosting, 60000);
+        return () => clearInterval(interval);
+    }, []);
 
-    // Log match to Supabase
-    userService.logMatch(userId, newMatchObj.id);
+    // INITIALIZE AND LOAD SESSION
+    useEffect(() => {
+        const loadUserSession = async () => {
+            try {
+                // Initialize game store
+                initialize();
 
-    // --- THE FIX ---
-    // Don't show toast. Show big screen.
-    setNewMatch(newMatchObj); 
-  };
+                // Ensure user is signed in
+                const authResult = await userService.ensureSignedIn();
+                if (authResult && authResult.success && authResult.userId) {
+                    setAuthUserId(authResult.userId);
+                } else {
+                    console.error('Failed to authenticate user');
+                    setIsLoadingSession(false);
+                    return;
+                }
 
-  const handlePass = (skin) => {
-    // Log swipe action to Supabase
-    userService.logSwipe(userId, skin.id, 'pass');
-    
-    setAvailableSkins(prev => prev.filter(s => s.id !== skin.id));
-  };
+                // Check if user has completed onboarding
+                const profileResult = await userService.getUserProfile();
 
-  const handleDeckEmpty = () => {
-    if (!isPremium && matches.length < 3) {
-      showToast("♻️ Recycling nearby singles...", "info"); // <--- PRETTY TOAST
-      // Refill with correct gender preference
-      let filteredSkins = rawData.skins;
-      if (userProfile && userProfile.interestedIn !== 'everyone') {
-        filteredSkins = rawData.skins.filter(s => s.gender === userProfile.interestedIn);
-      }
-      setAvailableSkins(filteredSkins.length > 0 ? filteredSkins : rawData.skins);
-    } else {
-      setView('list');
-    }
-  };
+                if (profileResult.success && profileResult.data) {
+                    // User has completed onboarding
+                    setUserProfile({
+                        name: profileResult.data.name,
+                        gender: profileResult.data.gender,
+                        interestedIn: profileResult.data.interested_in,
+                        avatar: profileResult.data.avatar
+                    });
+                    setShowOnboarding(false);
 
-  const handleSelectChat = (id) => {
-    const match = matches.find(m => m.id === id);
-    if (match && match.is_fading) {
-      setShowResurrection(true);
-      setFadingMatch(match);
-      return;
-    }
-    setMatches(prev => prev.map(m => m.id === id ? { ...m, last_interaction: Date.now() } : m));
-    setActivePersonaId(id);
-    setView('chat');
-  };
+                    // Load user session state
+                    const sessionResult = await userService.getUserSession();
+                    console.log('📦 Session restoration result:', sessionResult);
+
+                    if (sessionResult.success && sessionResult.data) {
+                        const session = sessionResult.data;
+
+                        // Restore view state
+                        setView(session.current_view || 'swipe');
+                        setActivePersonaId(session.active_persona_id);
+                        setCurrentScriptIndex(session.current_script_index || 0);
+                        setIsPremium(session.is_premium || false);
+
+                        if (session.is_premium) {
+                            const expiry = Date.now() + (24 * 60 * 60 * 1000);
+                            updatePremiumStatus(expiry);
+                        }
+
+                        // Restore matches with chat history
+                        if (session.matches && session.matches.length > 0) {
+                            console.log('🔄 Restoring matches:', session.matches.length);
+                            const matchesWithHistory = await Promise.all(
+                                session.matches.map(async (match) => {
+                                    // First, try to get chat history from database
+                                    const chatResult = await userService.getChatHistory(match.id);
+
+                                    let messages = [];
+
+                                    if (chatResult.success && chatResult.data && chatResult.data.length > 0) {
+                                        // Convert DB messages to app format
+                                        messages = chatResult.data.map(msg => ({
+                                            sender: msg.sender === 'user' ? 'user' : match.name.toLowerCase(),
+                                            text: msg.message,
+                                            timestamp: new Date(msg.timestamp).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            })
+                                        }));
+                                        console.log(`✅ Restored ${messages.length} messages from DB for ${match.name}`);
+                                    } else if (match.messages && match.messages.length > 0) {
+                                        // Fallback: Use messages stored in session
+                                        messages = match.messages;
+                                        console.log(`✅ Restored ${messages.length} messages from session for ${match.name}`);
+                                    } else if (match.initial_messages && match.initial_messages.length > 0) {
+                                        // Last resort: Use initial messages from match data
+                                        messages = match.initial_messages;
+                                        console.log(`ℹ️ Using initial messages for ${match.name}`);
+                                    }
+
+                                    return {
+                                        ...match,
+                                        messages,
+                                        last_interaction: match.last_interaction || Date.now(),
+                                        is_fading: match.is_fading || false
+                                    };
+                                })
+                            );
+                            setMatches(matchesWithHistory);
+                            console.log('✅ All matches restored with messages');
+                        }
+
+                        // Restore available skins
+                        if (session.available_skins && session.available_skins.length > 0) {
+                            console.log('✅ Restored available skins:', session.available_skins.length);
+                            setAvailableSkins(session.available_skins);
+                        } else {
+                            // Filter skins based on user preference
+                            let filteredSkins = rawData.skins;
+                            if (profileResult.data.interested_in !== 'everyone') {
+                                filteredSkins = rawData.skins.filter(
+                                    s => s.gender === profileResult.data.interested_in
+                                );
+                            }
+                            setAvailableSkins(filteredSkins.length > 0 ? filteredSkins : rawData.skins);
+                        }
+
+                        showToast("Welcome back! 👋", "success");
+                    } else {
+                        console.log('ℹ️ No saved session found, starting fresh');
+                        // No saved session, start fresh
+                        let filteredSkins = rawData.skins;
+                        if (profileResult.data.interested_in !== 'everyone') {
+                            filteredSkins = rawData.skins.filter(
+                                s => s.gender === profileResult.data.interested_in
+                            );
+                        }
+                        setAvailableSkins(filteredSkins.length > 0 ? filteredSkins : rawData.skins);
+                        setView('swipe');
+                    }
+                } else {
+                    // User needs to complete onboarding
+                    setShowOnboarding(true);
+                }
+
+                // Check premium status from localStorage as fallback
+                const premiumStatus = localStorage.getItem('isPremium');
+                if (premiumStatus === 'true' && !isPremium) {
+                    setIsPremium(true);
+                    const expiry = Date.now() + (24 * 60 * 60 * 1000);
+                    updatePremiumStatus(expiry);
+                }
+
+            } catch (error) {
+                console.error('Error loading user session:', error);
+                showToast("Failed to load session. Starting fresh.", "error");
+            } finally {
+                setIsLoadingSession(false);
+            }
+        };
+
+        loadUserSession();
+    }, [initialize, updatePremiumStatus, isPremium]);
+
+    // AUTO-SAVE SESSION STATE
+
+// Replace the AUTO-SAVE SESSION STATE useEffect (around line 172-192) with this improved version:
+
+// AUTO-SAVE SESSION STATE
+    useEffect(() => {
+        if (!authUserId || isLoadingSession || showOnboarding) return;
+
+        const saveSession = async () => {
+            try {
+                console.log('💾 Auto-saving session...', {
+                    view,
+                    activePersonaId,
+                    matchesCount: matches.length,
+                    skinsCount: availableSkins.length
+                });
+
+                const result = await userService.saveUserSession({
+                    currentView: view,
+                    activePersonaId,
+                    matches,
+                    availableSkins,
+                    currentScriptIndex,
+                    isPremium
+                });
+
+                if (result.success) {
+                    console.log('✅ Session saved successfully');
+                } else {
+                    console.error('❌ Session save failed:', result.error);
+                }
+            } catch (error) {
+                console.error('❌ Error auto-saving session:', error);
+            }
+        };
+
+        // Debounce saves (wait 1 second after last change)
+        const timeoutId = setTimeout(saveSession, 1000);
+        return () => clearTimeout(timeoutId);
+    }, [authUserId, isLoadingSession, showOnboarding, view, activePersonaId, matches, availableSkins, currentScriptIndex, isPremium]);
+
+// ADD: Save session before page unload
+    useEffect(() => {
+        const handleBeforeUnload = async () => {
+            if (!authUserId || showOnboarding) return;
+
+            // Use sendBeacon for reliable save on page close
+            const sessionData = {
+                currentView: view,
+                activePersonaId,
+                matches,
+                availableSkins,
+                currentScriptIndex,
+                isPremium
+            };
+
+            try {
+                await userService.saveUserSession(sessionData);
+                console.log('💾 Session saved on page unload');
+            } catch (error) {
+                console.error('❌ Failed to save on unload:', error);
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [authUserId, showOnboarding, view, activePersonaId, matches, availableSkins, currentScriptIndex, isPremium]);
+
+    // ONBOARDING COMPLETE
+    const handleOnboardingComplete = (data) => {
+        console.log("Onboarding Complete:", data);
+        setUserProfile(data);
+        setShowOnboarding(false);
+
+        // Save user profile to Supabase
+        userService.upsertUserProfile({
+            id: userId,
+            name: data.name,
+            gender: data.gender,
+            interestedIn: data.interestedIn,
+            avatar: data.avatar
+        });
+
+        // Filter skins based on gender preference
+        let filteredSkins = rawData.skins;
+        if (data.interestedIn !== 'everyone') {
+            filteredSkins = rawData.skins.filter(s => s.gender === data.interestedIn);
+        }
+
+        if (filteredSkins.length === 0) {
+            showToast("⚠️ Expanding search criteria...", "info");
+            setAvailableSkins(rawData.skins);
+        } else {
+            setAvailableSkins(filteredSkins);
+        }
+
+        setView('swipe');
+    };
+
+    // LIKE HANDLER
+    const handleLike = (skin) => {
+        if (!isPremium && matches.length >= 3) {
+            setShowUpgrade(true);
+            return;
+        }
+
+        userService.logSwipe(userId, skin.id, 'like');
+
+        const scriptIndex = currentScriptIndex % rawData.scripts.length;
+        const scriptToInject = rawData.scripts[scriptIndex];
+
+        const newMatchObj = {
+            id: Date.now().toString(),
+            ...skin,
+            ...scriptToInject,
+            messages: scriptToInject.initial_messages,
+            last_interaction: Date.now(),
+            is_fading: false,
+            original_skin_name: skin.name
+        };
+
+        setMatches(prev => [...prev, newMatchObj]);
+        setAvailableSkins(prev => prev.filter(s => s.id !== skin.id));
+        setCurrentScriptIndex(prev => prev + 1);
+
+        // Log match to Supabase with full match data
+        userService.logMatch(userId, newMatchObj.id, newMatchObj);
+
+        setNewMatch(newMatchObj);
+    };
+
+    const handlePass = (skin) => {
+        userService.logSwipe(userId, skin.id, 'pass');
+        setAvailableSkins(prev => prev.filter(s => s.id !== skin.
+            id));
+    };
+
+    const handleDeckEmpty = () => {
+        if (!isPremium && matches.length < 3) {
+            showToast("♻️ Recycling nearby singles...", "info");
+            let filteredSkins = rawData.skins;
+            if (userProfile && userProfile.interestedIn !== 'everyone') {
+                filteredSkins = rawData.skins.filter(s => s.gender === userProfile.interestedIn);
+            }
+            setAvailableSkins(filteredSkins.length > 0 ? filteredSkins : rawData.skins);
+        } else {
+            setView('list');
+        }
+    };
+
+    const handleSelectChat = (id) => {
+        const match = matches.find(m => m.id === id);
+        if (match && match.is_fading) {
+            setShowResurrection(true);
+            setFadingMatch(match);
+            return;
+        }
+        setMatches(prev => prev.map(m => m.id === id ? { ...m, last_interaction: Date.now() } : m));
+        setActivePersonaId(id);
+        setView('chat');
+    };
 
     const handleGameLoss = (personaId) => {
         const { consumeEnergy, currentEnergy, isPremiumActive } = useGameStore.getState();
@@ -208,7 +389,6 @@ function App() {
             const hasEnergy = consumeEnergy();
 
             if (!hasEnergy || currentEnergy <= 0) {
-                // Out of energy - show recharge modal
                 showToast("⚡ Out of Energy! Wait or upgrade to Premium.", "error");
                 setView('list');
                 return;
@@ -217,15 +397,13 @@ function App() {
             showToast(`💔 Game Over! -1 Energy (${currentEnergy - 1} left)`, "error");
         }
 
-        // Remove the match
         setMatches(prev => prev.filter(m => m.id !== personaId));
         setView('list');
     };
 
-  const handleBack = () => {
-    setView('list');
-    //setActivePersona(null); // Clear active persona when going back
-  };
+    const handleBack = () => {
+        setView('list');
+    };
 
     const handleSendMessage = async (personaId, message) => {
         setTypingPersonaId(personaId);
@@ -236,15 +414,30 @@ function App() {
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
 
-            // Log message to Supabase (non-blocking - don't await)
-            userService.logMessage(userId, personaId, message, 'user').catch(err => {
-                console.warn('⚠️ Failed to log user message to DB:', err);
-            });
-
+            // Update UI immediately
             setMatches(prev => prev.map(p => {
-                if (p.id === personaId) return { ...p, messages: [...p.messages, newMessage], last_interaction: Date.now() };
+                if (p.id === personaId) {
+                    const updatedMessages = [...p.messages, newMessage];
+                    return {
+                        ...p,
+                        messages: updatedMessages,
+                        last_interaction: Date.now()
+                    };
+                }
                 return p;
             }));
+
+            // Log user message to Supabase (await to ensure it's saved)
+            try {
+                const logResult = await userService.logMessage(authUserId, personaId, message, 'user');
+                if (logResult.success) {
+                    console.log('✅ User message saved to DB');
+                } else {
+                    console.warn('⚠️ Failed to save user message:', logResult.error);
+                }
+            } catch (err) {
+                console.error('❌ Error saving user message:', err);
+            }
 
             const persona = matches.find(p => p.id === personaId);
             if (!persona) throw new Error('PERSONA_NOT_FOUND');
@@ -267,7 +460,6 @@ function App() {
                     }
                 } catch (memErr) {
                     console.warn('⚠️ Memory summarization failed:', memErr);
-                    // Continue anyway - don't block chat
                 }
             }
 
@@ -278,7 +470,6 @@ function App() {
                 longTermMemories = memoryResult?.data || [];
             } catch (memErr) {
                 console.warn('⚠️ Failed to fetch memories:', memErr);
-                // Continue without memories
             }
 
             // Generate AI reply with minimum delay for realism
@@ -294,15 +485,26 @@ function App() {
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
 
-            // Log AI message to Supabase (non-blocking)
-            userService.logMessage(userId, personaId, aiText, 'ai').catch(err => {
-                console.warn('⚠️ Failed to log AI message to DB:', err);
-            });
-
+            // Update UI with AI reply
             setMatches(prev => prev.map(p => {
-                if (p.id === personaId) return { ...p, messages: [...p.messages, reply] };
+                if (p.id === personaId) {
+                    return { ...p, messages: [...p.messages, reply] };
+                }
                 return p;
             }));
+
+            // Log AI message to Supabase (await to ensure it's saved)
+            try {
+                const aiLogResult = await userService.logMessage(authUserId, personaId, aiText, 'ai');
+                if (aiLogResult.success) {
+                    console.log('✅ AI message saved to DB');
+                } else {
+                    console.warn('⚠️ Failed to save AI message:', aiLogResult.error);
+                }
+            } catch (err) {
+                console.error('❌ Error saving AI message:', err);
+            }
+
         } catch (error) {
             console.error('❌ Send message flow error:', error);
             showToast('AI failed to reply. Check API key / console logs.', 'error');
@@ -311,175 +513,200 @@ function App() {
         }
     };
 
-   const handleUpgrade = () => setShowUpgrade(true);
-   const handleUpgradeComplete = () => { 
-       setIsPremium(true); 
-       setShowUpgrade(false); 
-       localStorage.setItem('isPremium', 'true'); 
-       
-       // Set premium expiry for 24 hours
-       const expiry = Date.now() + (24 * 60 * 60 * 1000);
-       updatePremiumStatus(expiry);
-       
-       // Add coins for upgrade
-       addCoins(100);
-       
-       showToast("👑 UPGRADE SUCCESSFUL. WELCOME TO APEX.", "premium");
-   };
-   const handleCloseUpgrade = () => setShowUpgrade(false);
-   const handleRevealRedFlag = (persona) => { setRevealPersona(persona); };
-   const handleCloseReveal = () => setRevealPersona(null);
 
-   // --- FIX: DEFINING THE MISSING FUNCTION ---
-   const handleUnlockTruth = () => {
-       if (isPremium) {
-           showToast("Truth Revealed! (Check their profile)", "success");
-           handleCloseReveal();
-           // Logic to actually reveal truth would go here
-       } else {
-           setShowUpgrade(true);
-       }
-   };
-   
-   const handleResurrectMatch = () => {
-    if (!fadingMatch) return;
-    setMatches(prev => prev.map(m => m.id === fadingMatch.id ? { ...m, is_fading: false, last_interaction: Date.now(), is_premium: true } : m));
-    setShowResurrection(false); 
-    setFadingMatch(null);
-    showToast("Connection Restored!", "success");
-   };
+    const handleUpgrade = () => setShowUpgrade(true);
 
-   const handleLetGo = () => {
-    if (!fadingMatch) return;
-    setMatches(prev => prev.filter(m => m.id !== fadingMatch.id));
-    setShowResurrection(false); 
-    setFadingMatch(null);
-   };
-   const handleCloseResurrection = () => { setShowResurrection(false); setFadingMatch(null); };
+    const handleUpgradeComplete = () => {
+        setIsPremium(true);
+        setShowUpgrade(false);
+        localStorage.setItem('isPremium', 'true');
 
-   const handleViewChange = (newView) => setView(newView);
-   const handleRefreshSearch = () => { 
-      let filteredSkins = rawData.skins;
-      if (userProfile && userProfile.interestedIn !== 'everyone') {
-        filteredSkins = rawData.skins.filter(s => s.gender === userProfile.interestedIn);
-      }
-      setAvailableSkins(filteredSkins.length > 0 ? filteredSkins : rawData.skins);
-      setView('swipe'); 
-      showToast("Searching area...", "info");
-   };
+        const expiry = Date.now() + (24 * 60 * 60 * 1000);
+        updatePremiumStatus(expiry);
 
-   // --- MATCH MODAL HANDLERS ---
-   const handleCloseMatchModal = () => {
-       setNewMatch(null);
-       // If harem is full after closing match screen, THEN warn them
-       if (!isPremium && matches.length >= 3) {
-           showToast("Harem Full! Check your inbox.", "info");
-           setView('list');
-       }
-   };
+        addCoins(100);
 
-   const handleGoToChatFromModal = () => {
-      if (!newMatch) return;
-      const matchId = newMatch.id;
-      setNewMatch(null);
-      handleSelectChat(matchId);
-   };
+        showToast("👑 UPGRADE SUCCESSFUL. WELCOME TO APEX.", "premium");
+    };
 
-  // Import the PhoneFrame component at the top of the file
-  const PhoneFrame = ({ children }) => (
-    <div className="relative w-full h-full bg-white overflow-hidden">
-      {children}
-    </div>
-  );
+    const handleCloseUpgrade = () => setShowUpgrade(false);
+    const handleRevealRedFlag = (persona) => { setRevealPersona(persona); };
+    const handleCloseReveal = () => setRevealPersona(null);
 
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="relative w-full max-w-[414px] h-[90vh] max-h-[896px] bg-black rounded-[40px] shadow-2xl overflow-hidden border-[14px] border-black">
-        {/* Status bar */}
-        <div className="h-12 bg-black flex items-center justify-between px-6 pt-2 text-white text-xs z-50">
-          <span>9:41</span>
-          <div className="flex items-center space-x-2">
-            <span>📶</span>
-            <span>🔋</span>
-          </div>
-        </div>
-        
-        {/* Screen content */}
-        <div className="h-[calc(100%-48px)] bg-white relative overflow-hidden">
-          {/* Toast Notification */}
-          <div className="absolute top-2 left-0 right-0 z-50 px-4 pointer-events-none">
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-          </div>
+    const handleUnlockTruth = () => {
+        if (isPremium) {
+            showToast("Truth Revealed! (Check their profile)", "success");
+            handleCloseReveal();
+        } else {
+            setShowUpgrade(true);
+        }
+    };
 
-          {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
-          
-          <MatchModal 
-            match={newMatch} 
-            userAvatar={userProfile?.avatar} 
-            onClose={handleCloseMatchModal}
-            onChat={handleGoToChatFromModal}
-          />
+    const handleResurrectMatch = () => {
+        if (!fadingMatch) return;
+        setMatches(prev => prev.map(m => m.id === fadingMatch.id ? { ...m, is_fading: false, last_interaction: Date.now(), is_premium: true } : m));
+        setShowResurrection(false);
+        setFadingMatch(null);
+        showToast("Connection Restored!", "success");
+    };
 
-          {!showOnboarding && view === 'swipe' && (
-            <div className="h-full flex flex-col">
-              <div className="flex-1 overflow-hidden">
-                <SwipeDeck
-                  personas={availableSkins}
-                  onLike={handleLike}
-                  onPass={handlePass}
-                  onDeckEmpty={handleDeckEmpty}
-                  isPremium={isPremium}
-                  onRefresh={handleRefreshSearch}
-                  currentMatches={matches}
-                />
-              </div>
-            </div>
-          )}
+    const handleLetGo = () => {
+        if (!fadingMatch) return;
+        setMatches(prev => prev.filter(m => m.id !== fadingMatch.id));
+        setShowResurrection(false);
+        setFadingMatch(null);
+    };
 
-          {!showOnboarding && view === 'list' && (
-             <div className="pt-12 pb-20 h-full">
-                <ChatList 
-                  personas={matches} 
-                  onSelectChat={handleSelectChat} 
-                  onUpgrade={handleUpgrade}
-                  isPremium={isPremium}
-                />
-             </div>
-          )}
+    const handleCloseResurrection = () => { setShowResurrection(false); setFadingMatch(null); };
 
-            {!showOnboarding && view === 'chat' && activePersonaId && (
-                <div className="pt-10 h-full bg-white">
-                    <ChatInterface
-                        persona={matches.find(m => m.id === activePersonaId)}
-                        onBack={handleBack}
-                        messages={matches.find(m => m.id === activePersonaId)?.messages || []}
-                        onSendMessage={(message) => handleSendMessage(activePersonaId, message)}
-                        onRevealRedFlag={() => handleRevealRedFlag(matches.find(m => m.id === activePersonaId))}
-                        isTyping={typingPersonaId === activePersonaId}
-                    />
+    const handleViewChange = (newView) => setView(newView);
+
+    const handleRefreshSearch = () => {
+        let filteredSkins = rawData.skins;
+        if (userProfile && userProfile.interestedIn !== 'everyone') {
+            filteredSkins = rawData.skins.filter(s => s.gender === userProfile.interestedIn);
+        }
+        setAvailableSkins(filteredSkins.length > 0 ? filteredSkins : rawData.skins);
+        setView('swipe');
+        showToast("Searching area...", "info");
+    };
+
+    const handleCloseMatchModal = () => {
+        setNewMatch(null);
+        if (!isPremium && matches.length >= 3) {
+            showToast("Harem Full! Check your inbox.", "info");
+            setView('list');
+        }
+    };
+
+    const handleGoToChatFromModal = () => {
+        if (!newMatch) return;
+        const matchId = newMatch.id;
+        setNewMatch(null);
+        handleSelectChat(matchId);
+    };
+
+    // Show loading screen while restoring session
+    if (isLoadingSession) {
+        return (
+            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                <div className="relative w-full max-w-[414px] h-[90vh] max-h-[896px] bg-black rounded-[40px] shadow-2xl overflow-hidden border-[14px] border-black">
+                    <div className="h-12 bg-black flex items-center justify-between px-6 pt-2 text-white text-xs z-50">
+                        <span>9:41</span>
+                        <div className="flex items-center space-x-2">
+                            <span>📶</span>
+                            <span>🔋</span>
+                        </div>
+                    </div>
+                    <div className="h-[calc(100%-48px)] bg-white flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+                            <p className="text-gray-600">Loading your session...</p>
+                        </div>
+                    </div>
                 </div>
-            )}
-
-          {/* Navigation Bar (Fixed to bottom of phone) */}
-          {!showOnboarding && view !== 'chat' && (
-            <div className="absolute bottom-0 left-0 right-0 z-40">
-              <BottomNav currentView={view} onViewChange={handleViewChange} />
             </div>
-          )}
+        );
+    }
 
-          {/* Modals */}
-          {revealPersona && <RevealModal persona={revealPersona} onClose={handleCloseReveal} onUpgrade={handleUnlockTruth} />}
-          {showResurrection && fadingMatch && <ResurrectionModal match={fadingMatch} onClose={handleCloseResurrection} onResurrect={handleResurrectMatch} onLetGo={handleLetGo} />}
-          {showUpgrade && <UpgradeModal onClose={handleCloseUpgrade} onUpgrade={handleUpgradeComplete} />}
+    return (
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+            <div className="relative w-full max-w-[414px] h-[90vh] max-h-[896px] bg-black rounded-[40px] shadow-2xl overflow-hidden border-[14px] border-black">
+                {/* Status bar */}
+                <div className="h-12 bg-black flex items-center justify-between px-6 pt-2 text-white text-xs z-50">
+                    <span>9:41</span>
+                    <div className="flex items-center space-x-2">
+                        <span>📶</span>
+                        <span>🔋</span>
+                    </div>
+                </div>
+
+                {/* Screen content */}
+                <div className="h-[calc(100%-48px)] bg-white relative overflow-hidden">
+                    {/* Toast Notification */}
+                    <div className="absolute top-2 left-0 right-0 z-50 px-4 pointer-events-none">
+                        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+                    </div>
+
+                    {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
+
+                    <MatchModal
+                        match={newMatch}
+                        userAvatar={userProfile?.avatar}
+                        onClose={handleCloseMatchModal}
+                        onChat={handleGoToChatFromModal}
+                    />
+
+                    {!showOnboarding && view === 'swipe' && (
+                        <div className="h-full flex flex-col">
+                            <div className="flex-1 overflow-hidden">
+                                <SwipeDeck
+                                    personas={availableSkins}
+                                    onLike={handleLike}
+                                    onPass={handlePass}
+                                    onDeckEmpty={handleDeckEmpty}
+                                    isPremium={isPremium}
+                                    onRefresh={handleRefreshSearch}
+                                    currentMatches={matches}
+                                />
+                            </div>
+                            <BottomNav currentView="swipe" onViewChange={handleViewChange} />
+                        </div>
+                    )}
+
+                    {!showOnboarding && view === 'list' && (
+                        <div className="h-full flex flex-col">
+                            <div className="flex-1 overflow-hidden">
+                                <ChatList
+                                    personas={matches}
+                                    onSelectChat={handleSelectChat}
+                                    onRefreshSearch={handleRefreshSearch}
+                                    onUpgrade={handleUpgrade}
+                                    isPremium={isPremium}
+                                />
+                            </div>
+                            <BottomNav currentView="list" onViewChange={handleViewChange} />
+                        </div>
+                    )}
+
+                    {!showOnboarding && view === 'chat' && activePersonaId && (
+                        <ChatInterface
+                            persona={matches.find(p => p.id === activePersonaId)}
+                            onBack={handleBack}
+                            messages={matches.find(p => p.id === activePersonaId)?.messages || []}
+                            onSendMessage={(text) => handleSendMessage(activePersonaId, text)}
+                            onRevealRedFlag={() => handleRevealRedFlag(matches.find(p => p.id === activePersonaId))}
+                            isTyping={typingPersonaId === activePersonaId}
+                        />
+                    )}
+
+                    {showUpgrade && (
+                        <UpgradeModal
+                            onClose={handleCloseUpgrade}
+                            onUpgrade={handleUpgradeComplete}
+                        />
+                    )}
+
+                    {revealPersona && (
+                        <RevealModal
+                            persona={revealPersona}
+                            onClose={handleCloseReveal}
+                            onUpgrade={handleUnlockTruth}
+                        />
+                    )}
+
+                    {showResurrection && fadingMatch && (
+                        <ResurrectionModal
+                            match={fadingMatch}
+                            onClose={handleCloseResurrection}
+                            onResurrect={handleResurrectMatch}
+                            onLetGo={handleLetGo}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
-        
-        {/* Home indicator for iOS */}
-        <div className="absolute bottom-2 left-0 right-0 flex justify-center">
-          <div className="w-1/3 h-1 bg-gray-400 rounded-full"></div>
-        </div>
-      </div>
-    </div>
-  );
+    );
 }
 
 export default App;
